@@ -1,0 +1,12 @@
+.DS_Store
+.idea
+.envrc
+.env
+go.work
+go.work.sum
+go.sum
+bin/
+dist/
+tmp/
+venv/
+.history/
