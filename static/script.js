@@ -36,7 +36,7 @@ async function startPublisher() {
     try {
         console.log("Requesting access to media devices...");
 
-        const constraints = { video: true, audio: true };  // Define media constraints for video and audio
+        const constraints = { video: true, audio: false };  // Define media constraints for video and audio
         const stream = await navigator.mediaDevices.getUserMedia(constraints); // Request media stream
         console.log("Publisher's media stream acquired:", stream);
 
@@ -44,25 +44,82 @@ async function startPublisher() {
         document.body.appendChild(createVideoElement(stream));
 
         // Create a new RTCPeerConnection
-        peerConnection = new RTCPeerConnection(servers);
+        peerConnection = new RTCPeerConnection({
+            iceServers: [{
+              urls: 'stun:stun.l.google.com:19302'
+            }]
+        });
 
         // Add the media stream's tracks to the peer connection
         stream.getTracks().forEach((track) => {
-            console.log(`Track being added to peer connection - Kind: ${track.kind}, Label: ${track.label}`);
+            //console.log(`Track being added to peer connection - Kind: ${track.kind}, Label: ${track.label}`);
             peerConnection.addTrack(track, stream);  // Add track to peer connection
         });
 
         // Log all senders
-        logSenders();
+        //logSenders();
 
         // Handle ICE candidates
-        peerConnection.onicecandidate = (event) => {
+        peerConnection.onicecandidate = event => {
             if (event.candidate) {
-                console.log("New ICE candidate for publisher:", event.candidate);
-            } else {
-                console.log("All ICE candidates for publisher have been sent.");
+                console.log("Sending ICE candidate to the server.");
+                fetch('http://localhost:8080/ice-candidate-p', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(event.candidate)
+                }).then(() => {
+                    console.log("ICE candidate sent successfully.");
+                }).catch(error => {
+                    console.error("Error sending ICE candidate:", error);
+                });
             }
         };
+
+        try {
+        
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            console.log("Offer created and set as local description.");
+    
+            const response = await fetch('http://localhost:8080/publish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(offer)
+            });
+            const answer = await response.json();
+            console.log("Received answer from the server.");
+    
+            await peerConnection.setRemoteDescription(answer);
+            console.log("Answer set as remote description.");
+        } catch (error) {
+            console.error("Error during offer/answer exchange:", error);
+        }
+
+
+
+        // Handle incoming ICE candidates from the server
+        const handleIncomingICECandidate = async (candidate) => {
+            try {
+                await peerConnection.addIceCandidate(candidate);
+                console.log("Added received ICE candidate.");
+            } catch (e) {
+                console.error('Error adding received ice candidate', e);
+            }
+        };
+
+        // Poll the server for ICE candidates
+        setInterval(async () => {
+            try {
+                const response = await fetch('http://localhost:8080/ice-candidates-p');
+                const candidates = await response.json();
+                if (candidates) {
+                    candidates.forEach(handleIncomingICECandidate);
+                    console.log("Polled and added ICE candidates from the server.");
+                }
+            } catch (error) {
+                console.error("Error polling ICE candidates:", error);
+            }
+        }, 1000);
 
         // Handle ICE connection state changes
         peerConnection.oniceconnectionstatechange = function() {
@@ -75,6 +132,7 @@ async function startPublisher() {
         };
 
         // Handle negotiation needed event
+        /*
         peerConnection.onnegotiationneeded = async () => {
             try {
                 console.log("Negotiation needed");
@@ -83,18 +141,19 @@ async function startPublisher() {
                 console.log("Publisher SDP offer created:");
 
                 // Send offer to the SFU server and receive the SDP answer
-                const response = await fetch("/publish", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    body: `sdp=${encodeURIComponent(offer.sdp)}&type=offer`,
-                });
+                const response = await fetch('http://localhost:8080/offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(offer)
+                  });
 
-                const answer = await response.text();
-                console.log("Received SDP answer from SFU server:");
-                await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
-                console.log("Publisher remote description set");
+                const answer = await response.json();
+                console.log("Received SDP answer from SFU server:", answer);
+                //await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
+                //console.log("Publisher remote description set");
+                let a = JSON.parse(answer);
+                peerConnection.setRemoteDescription(answer.sdp)
+                    .catch(error => console.error('Error setting answer remote description:', error));
 
                 // Log the senders after negotiation
                 logSenders();
@@ -102,6 +161,7 @@ async function startPublisher() {
                 console.error("Error during negotiation:", error);
             }
         };
+        */
 
     } catch (error) {
         console.error("Error getting media stream:", error);
@@ -109,12 +169,31 @@ async function startPublisher() {
     }
 }
 
+
+
 // Function to start viewing (downloading) the video stream
 async function startViewer() {
     try {
         console.log("Starting viewer...");
+        
+        const constraints = { video: true, audio: false };  // Define media constraints for video and audio
+        const stream = await navigator.mediaDevices.getUserMedia(constraints); // Request media stream
+        console.log("media stream acquired:", stream);
 
-        peerConnection = new RTCPeerConnection(servers);
+
+        // Create a new RTCPeerConnection
+        peerConnection = new RTCPeerConnection({
+            iceServers: [{
+              urls: 'stun:stun.l.google.com:19302'
+            }]
+        });
+
+        // Add the media stream's tracks to the peer connection
+        stream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, stream);  // Add track to peer connection
+        });
+
+
 
         // Handle incoming tracks from the publisher
         peerConnection.ontrack = (event) => {
@@ -125,11 +204,18 @@ async function startViewer() {
         };
 
         // Handle ICE candidates
-        peerConnection.onicecandidate = (event) => {
+        peerConnection.onicecandidate = event => {
             if (event.candidate) {
-                console.log("New ICE candidate for viewer:", event.candidate);
-            } else {
-                console.log("All ICE candidates for viewer have been sent.");
+                console.log("Sending ICE candidate to the server.");
+                fetch('http://localhost:8080/ice-candidate-v', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(event.candidate)
+                }).then(() => {
+                    console.log("ICE candidate sent successfully.");
+                }).catch(error => {
+                    console.error("Error sending ICE candidate:", error);
+                });
             }
         };
 
@@ -143,25 +229,49 @@ async function startViewer() {
             console.log("Viewer connection state:", peerConnection.connectionState);
         };
 
-        // Create WebRTC offer for viewing
-        const offer = await peerConnection.createOffer();
-        console.log("Viewer SDP offer created:", offer.sdp);
-        await peerConnection.setLocalDescription(offer);
-        console.log("Viewer local description set.");
+        try {
+        
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            console.log("Offer created and set as local description.");
+    
+            const response = await fetch('http://localhost:8080/view', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(offer)
+            });
+            const answer = await response.json();
+            console.log("Received answer from the server.");
+    
+            await peerConnection.setRemoteDescription(answer);
+            console.log("Answer set as remote description.");
+        } catch (error) {
+            console.error("Error during offer/answer exchange:", error);
+        }
 
-        // Send the offer to the SFU server and receive the SDP answer
-        const response = await fetch("/view", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: `sdp=${encodeURIComponent(offer.sdp)}&type=offer`,
-        });
+        // Handle incoming ICE candidates from the server
+        const handleIncomingICECandidate = async (candidate) => {
+            try {
+                await peerConnection.addIceCandidate(candidate);
+                console.log("Added received ICE candidate.");
+            } catch (e) {
+                console.error('Error adding received ice candidate', e);
+            }
+        };
 
-        const answer = await response.text();
-        console.log("Received SDP answer from SFU server:", answer);
-        await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
-        console.log("Viewer remote description set.");
+        // Poll the server for ICE candidates
+        setInterval(async () => {
+            try {
+                const response = await fetch('http://localhost:8080/ice-candidates-v');
+                const candidates = await response.json();
+                if (candidates) {
+                    candidates.forEach(handleIncomingICECandidate);
+                    console.log("Polled and added ICE candidates from the server.");
+                }
+            } catch (error) {
+                console.error("Error polling ICE candidates:", error);
+            }
+        }, 1000);
 
     } catch (error) {
         console.error("Error starting viewer:", error);
