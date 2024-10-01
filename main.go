@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -119,6 +120,14 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
 		panic(err)
 	}
+
+	// This interceptor sends a PLI every 3 seconds, when new peer joins it will get keyframe to start with automatically.
+	// on production, need to have PLI logic (keyframe) that will only be requested when new peer joins
+	intervalPliFactory, err := intervalpli.NewReceiverInterceptor()
+	if err != nil {
+		panic(err)
+	}
+	i.Add(intervalPliFactory)
 
 	// create new peer connection
 	p, err := webrtc.NewAPI(webrtc.WithInterceptorRegistry(i), webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(settingEngine)).NewPeerConnection(config)
