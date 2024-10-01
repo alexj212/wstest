@@ -63,7 +63,7 @@ async function startPublisher() {
         peerConnection.onicecandidate = event => {
             if (event.candidate) {
                 console.log("Sending ICE candidate to the server.");
-                fetch('http://localhost:8080/ice-candidate-p', {
+                fetch('/ice-candidate-p', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(event.candidate)
@@ -81,13 +81,15 @@ async function startPublisher() {
             await peerConnection.setLocalDescription(offer);
             console.log("Offer created and set as local description.");
     
-            const response = await fetch('http://localhost:8080/publish', {
+            const response = await fetch('/publish', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(offer)
             });
             const answer = await response.json();
-            console.log("Received answer from the server.");
+
+            console.log("Received answer from the server.", answer, response);
+
     
             await peerConnection.setRemoteDescription(answer);
             console.log("Answer set as remote description.");
@@ -110,7 +112,7 @@ async function startPublisher() {
         // Poll the server for ICE candidates
         setInterval(async () => {
             try {
-                const response = await fetch('http://localhost:8080/ice-candidates-p');
+                const response = await fetch('/ice-candidates-p');
                 const candidates = await response.json();
                 if (candidates) {
                     candidates.forEach(handleIncomingICECandidate);
@@ -131,37 +133,6 @@ async function startPublisher() {
             console.log("Publisher connection state:", peerConnection.connectionState);
         };
 
-        // Handle negotiation needed event
-        /*
-        peerConnection.onnegotiationneeded = async () => {
-            try {
-                console.log("Negotiation needed");
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                console.log("Publisher SDP offer created:");
-
-                // Send offer to the SFU server and receive the SDP answer
-                const response = await fetch('http://localhost:8080/offer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(offer)
-                  });
-
-                const answer = await response.json();
-                console.log("Received SDP answer from SFU server:", answer);
-                //await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: answer }));
-                //console.log("Publisher remote description set");
-                let a = JSON.parse(answer);
-                peerConnection.setRemoteDescription(answer.sdp)
-                    .catch(error => console.error('Error setting answer remote description:', error));
-
-                // Log the senders after negotiation
-                logSenders();
-            } catch (error) {
-                console.error("Error during negotiation:", error);
-            }
-        };
-        */
 
     } catch (error) {
         console.error("Error getting media stream:", error);
@@ -207,7 +178,7 @@ async function startViewer() {
         peerConnection.onicecandidate = event => {
             if (event.candidate) {
                 console.log("Sending ICE candidate to the server.");
-                fetch('http://localhost:8080/ice-candidate-v', {
+                fetch('/ice-candidate-v', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(event.candidate)
@@ -235,13 +206,14 @@ async function startViewer() {
             await peerConnection.setLocalDescription(offer);
             console.log("Offer created and set as local description.");
     
-            const response = await fetch('http://localhost:8080/view', {
+            const response = await fetch('/view', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(offer)
             });
             const answer = await response.json();
-            console.log("Received answer from the server.");
+            console.log("Received answer from the server.", response);
+            console.log("Received answer from the server.", answer);
     
             await peerConnection.setRemoteDescription(answer);
             console.log("Answer set as remote description.");
@@ -262,7 +234,7 @@ async function startViewer() {
         // Poll the server for ICE candidates
         setInterval(async () => {
             try {
-                const response = await fetch('http://localhost:8080/ice-candidates-v');
+                const response = await fetch('/ice-candidates-v');
                 const candidates = await response.json();
                 if (candidates) {
                     candidates.forEach(handleIncomingICECandidate);
